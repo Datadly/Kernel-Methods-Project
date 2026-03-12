@@ -10,7 +10,7 @@ if root_dir not in sys.path:
     sys.path.append(root_dir)
 
 from src.utils import standardize, augment_data, augment_data_v2
-from src.features import hog_descriptor, hog_descriptor_v2
+from src.features import hog_descriptor, hog_descriptor_v2, spatial_color_histogram, color_histogram
 from src.models import KernelSVM, KernelRidgeRegression, KRR_Custom
 from src.kernels import rbf_kernel, laplacian_kernel
 
@@ -34,13 +34,23 @@ def main():
     # --- Data Augmentation ---
     X_aug, y_aug = augment_data_v2(X_all_raw, y_all_raw)
 
-    # --- HOG Feature Extraction ---
-    print(f"feat: Extracting HOG (Train Aug: {X_aug.shape[0]}, Test: {X_test_raw.shape[0]})...")
+    # ---  Feature Extraction ---
+    print(f"Extracting HOG (Train Aug: {X_aug.shape[0]}, Test: {X_test_raw.shape[0]})...")
     X_train_hog = hog_descriptor_v2(X_aug, cell_size=4, orientations=9)
     X_test_hog = hog_descriptor_v2(X_test_raw, cell_size=4, orientations=9)
 
+    # --- Color Extraction ---
+    print("Extracting Global Colors (bins=16)...")
+    X_train_color = color_histogram(X_aug, bins=16)
+    X_test_color = color_histogram(X_test_raw, bins=16)
+
+    # --- Fusion ---
+    print("Fusing HOG and Color features...")
+    X_train_fused = np.hstack((X_train_hog, X_train_color))
+    X_test_fused = np.hstack((X_test_hog, X_test_color))
+
     # --- Standardization ---
-    X_train_std, X_test_std = standardize(X_train_hog, X_test_hog)
+    X_train_std, X_test_std = standardize(X_train_fused, X_test_fused)
 
     # --- Parameters ---
     sigma_best = 700

@@ -118,3 +118,110 @@ def color_histogram(X, bins=16):
         features[i] = np.concatenate([h_r, h_g, h_b])
     
     return features
+
+def spatial_color_histogram(X, bins=16):
+    N = X.shape[0]
+    features = np.zeros((N, 4 * 3 * bins))
+
+    for i in range(N):
+        img = X[i].reshape(3, 32, 32)
+
+        quadrants = [
+            img[:, :16, :16],  # Up Left
+            img[:, :16, 16:],  # Up Right
+            img[:, 16:, :16],  # Bottom Left
+            img[:, 16:, 16:]   # Bottom Right
+        ]
+
+        hist_img = []
+
+        for q in quadrants:
+            for c in range(3):
+                h, _ = np.histogram(q[c], bins=bins, range=(0, 255), density=True)
+                hist_img.append(h)
+        features[i] = np.concatenate(hist_img)
+
+    return features
+
+# -------- New Feature Extraction : CKN --------
+
+from src.kernels import exp_kernel, power_kernel
+
+def extract_patches(images, patch_size=3): # Step A : Patch Extraction
+    N = len(images)
+    img_3d = images.reshape(N, 3, 32, 32)
+
+    output_h = 32 - patch_size + 1
+    output_w = 32 - patch_size + 1
+
+    patches = np.lib.stride_tricks.sliding_window_view(img_3d, window_shape=(patch_size, patch_size), axis=(2, 3))
+    patches = patches.transpose(0, 2, 3, 1, 4, 5).reshape(-1, 3 * patch_size * patch_size)
+
+    return patches
+
+def spherical_kmeans(X, n_clusters, max_iters=100): # Step B : Learning dictionnary (KMeans)
+    eps = 1e-6
+    x_norm = X / np.maximum(np.linalg.norm(X, axis=1, keepdims=True), eps)
+
+    np.random.seed(42)
+    indices = np.random.choice(len(x_norm), n_clusters, replace=False)
+    centroids = x_norm[indices].copy()
+
+    print(f"Launching K-Means on {n_clusters} clusters...")
+
+    for n_iter in range(max_iters):
+        sim = np.dot(x_norm, centroids.T)
+
+        assign = np.argmax(sim, axis=1)
+
+        new_centroids = np.zeros_like(centroids)
+
+        for j in range(n_clusters):
+            cluster_points = x_norm[assign == j]
+
+            if len(cluster_points) > 0:
+                c = np.mean(cluster_points, axis=0)
+                new_centroids[j] = c / np.maximum(np.linalg.norm(c), eps)
+            
+            else:
+                new_centroids[j] = x_norm[np.random.choice(len(x_norm))]
+        
+        diff = np.linalg.norm(new_centroids - centroids)
+        centroids = new_centroids
+
+        if diff < 1e-4:
+            print(f"Converged at iteration {n_iter}")
+            break
+    
+    return centroids
+
+def convolution(images, filters, patch_size=3, alpha=0.5):
+    N = len(images)
+    n_filters = len(filters)
+    img_3d = images.reshape(N, 3, 32, 32)
+
+    output_h = 32 - patch_size + 1
+    output_w = 32 - patch_size + 1
+
+    patches = np.lib.stride_tricks.sliding_window_view(img_3d, window_shape=(patch_size, patch_size), axis=(2, 3))
+    patches = patches.transpose(0, 2, 3, 1, 4, 5).reshape(N, output_h, output_w, -1)
+
+    eps = 1e-6
+    patches_norm = patches / np.maximum(np.linalg.norm(patches, axis=-1, keepdims=True), eps)
+
+    conv = np.tensordot(patches_norm, filters, axes=([-1], [-1]))
+
+    feature_maps = exp_kernel(conv, alpha=alpha)
+
+    return feature_maps
+
+def average_pooling(feature_maps, pool_size=3):
+    N, H, W, F = feature_maps.shape
+    new_H = H // pool_size
+    new_W = W // pool_size
+    cropped = feature_maps[:, :new_H*pool_size, :new_W*pool_size, :]
+
+    pooled = cropped.reshape(N, new_H, pool_size, new_W, pool_size, F).mean(axis=(2,4))
+
+    return pooled
+

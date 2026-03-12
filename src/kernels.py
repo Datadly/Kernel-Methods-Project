@@ -18,3 +18,10 @@ def laplacian_kernel(X1, X2, sigma=10.0):
         K[i, :] = np.exp(-dist_l1 / sigma)
     return K
 
+# ------ CKN Kernels ------
+
+def exp_kernel(x, alpha):
+    return np.exp(-alpha * (x - 1))
+
+def power_kernel(x, alpha):
+    return np.power(x, alpha)
