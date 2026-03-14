@@ -143,26 +143,47 @@ def spatial_color_histogram(X, bins=16):
 
     return features
 
+def spatial_color_histogram_custom(X, bins=16, grid=(2,2)):
+    N = X.shape[0]
+    rows, cols = grid
+    features = np.zeros((N, rows * cols * 3 * bins))
+    
+    h_s, w_s = 32 // rows, 32 // cols
+
+    for i in range(N):
+        img = X[i].reshape(3, 32, 32)
+        hists = []
+        for r in range(rows):
+            for c in range(cols):
+                sector = img[:, r*h_s:(r+1)*h_s, c*w_s:(c+1)*w_s]
+                for ch in range(3):
+                    h, _ = np.histogram(sector[ch], bins=bins, range=(0, 255))
+                    s = np.sum(h)
+                    if s > 0:
+                        h = h / s
+                    hists.append(h)
+        features[i] = np.concatenate(hists)
+    if np.isnan(features).any():
+        print("⚠️ NaNs detected in features !")
+        features = np.nan_to_num(features)
+    return features
+
 # -------- New Feature Extraction : CKN --------
 
 from src.kernels import exp_kernel, power_kernel
 
-def extract_patches(images, patch_size=3): # Step A : Patch Extraction
-    N = len(images)
-    img_3d = images.reshape(N, 3, 32, 32)
-
-    output_h = 32 - patch_size + 1
-    output_w = 32 - patch_size + 1
-
-    patches = np.lib.stride_tricks.sliding_window_view(img_3d, window_shape=(patch_size, patch_size), axis=(2, 3))
-    patches = patches.transpose(0, 2, 3, 1, 4, 5).reshape(-1, 3 * patch_size * patch_size)
-
+def extract_patches(maps, patch_size=3): # Step A : Patch Extraction
+    N, C, H, W = maps.shape
+    output_h = H - patch_size + 1
+    output_w = W - patch_size + 1
+    patches = np.lib.stride_tricks.sliding_window_view(maps, window_shape=(patch_size, patch_size), axis=(2, 3))
+    patches = patches.transpose(0, 2, 3, 1, 4, 5).reshape(-1, C * patch_size * patch_size)
     return patches
+    
 
 def spherical_kmeans(X, n_clusters, max_iters=100): # Step B : Learning dictionnary (KMeans)
     eps = 1e-6
     x_norm = X / np.maximum(np.linalg.norm(X, axis=1, keepdims=True), eps)
-
     np.random.seed(42)
     indices = np.random.choice(len(x_norm), n_clusters, replace=False)
     centroids = x_norm[indices].copy()
@@ -171,18 +192,13 @@ def spherical_kmeans(X, n_clusters, max_iters=100): # Step B : Learning dictionn
 
     for n_iter in range(max_iters):
         sim = np.dot(x_norm, centroids.T)
-
         assign = np.argmax(sim, axis=1)
-
         new_centroids = np.zeros_like(centroids)
-
         for j in range(n_clusters):
             cluster_points = x_norm[assign == j]
-
             if len(cluster_points) > 0:
                 c = np.mean(cluster_points, axis=0)
                 new_centroids[j] = c / np.maximum(np.linalg.norm(c), eps)
-            
             else:
                 new_centroids[j] = x_norm[np.random.choice(len(x_norm))]
         
@@ -195,33 +211,27 @@ def spherical_kmeans(X, n_clusters, max_iters=100): # Step B : Learning dictionn
     
     return centroids
 
-def convolution(images, filters, patch_size=3, alpha=0.5):
-    N = len(images)
-    n_filters = len(filters)
-    img_3d = images.reshape(N, 3, 32, 32)
-
-    output_h = 32 - patch_size + 1
-    output_w = 32 - patch_size + 1
-
-    patches = np.lib.stride_tricks.sliding_window_view(img_3d, window_shape=(patch_size, patch_size), axis=(2, 3))
+def convolution(maps, filters, patch_size=3, alpha=0.5):
+    N, C, H, W = maps.shape
+    output_h = H - patch_size + 1
+    output_w = W - patch_size + 1
+    patches = np.lib.stride_tricks.sliding_window_view(maps, window_shape=(patch_size, patch_size), axis=(2, 3))
     patches = patches.transpose(0, 2, 3, 1, 4, 5).reshape(N, output_h, output_w, -1)
 
     eps = 1e-6
     patches_norm = patches / np.maximum(np.linalg.norm(patches, axis=-1, keepdims=True), eps)
-
     conv = np.tensordot(patches_norm, filters, axes=([-1], [-1]))
-
-    feature_maps = exp_kernel(conv, alpha=alpha)
-
+    
+    feature_maps = np.exp(alpha * (conv - 1.0))
     return feature_maps
+    
 
 def average_pooling(feature_maps, pool_size=3):
     N, H, W, F = feature_maps.shape
     new_H = H // pool_size
     new_W = W // pool_size
     cropped = feature_maps[:, :new_H*pool_size, :new_W*pool_size, :]
-
     pooled = cropped.reshape(N, new_H, pool_size, new_W, pool_size, F).mean(axis=(2,4))
 
-    return pooled
+    return pooled.transpose(0, 3, 1, 2)
 
