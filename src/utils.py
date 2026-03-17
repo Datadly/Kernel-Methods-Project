@@ -12,15 +12,12 @@ def standardize(X_train, X_test): # Does not leak test data info
     return X_train_std, X_test_std
 
 def augment_data(X, y): # Augments dataset by adding mirror clones
-    
     N = X.shape[0]
     
     X_imgs = X.reshape(N, 3, 32, 32)
-    
     X_flipped = X_imgs[:, :, :, ::-1] # Horizontal flip
-    
     X_flipped = X_flipped.reshape(N, 3072)
-    
+
     X_aug = np.vstack([X, X_flipped])
     y_aug = np.concatenate([y, y])
     
@@ -43,7 +40,6 @@ def gaussian_blur(X_raw):
     return blurred.reshape(N, 3072)
 
 def augment_data_v2(X, y):
-    
     X_mirror = X.reshape(-1, 3, 32, 32)[:, :, :, ::-1].reshape(-1, 3072) # Apply mirror
     X_blur = gaussian_blur(X) # Apply Gaussian blur
     

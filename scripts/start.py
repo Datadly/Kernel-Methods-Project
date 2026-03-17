@@ -70,7 +70,6 @@ def main():
     # --- Fusion ---
     K_train_total = K_tr_hog + K_tr_sp
     K_test_total = K_te_hog + K_te_sp
-
     
     # --- One Hot Encoding ---
     Y_multi = np.full((len(y_aug), n_classes), -1.0) 
@@ -96,7 +95,7 @@ def main():
     
     output_file = 'Yte_pred.csv'
     submission.to_csv(output_file, index=False)
-    print(f"✅ Submission File saved as : {output_file}")
+    print(f"Submission File saved as : {output_file}")
     
 
 if __name__ == "__main__":
